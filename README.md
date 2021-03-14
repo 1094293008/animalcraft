@@ -90,3 +90,7 @@
 ## 下载链接
 
 https://github.com/WZ403809264/animalcraft/releases/tag/V1.28
+
+## 线上交流
+
+QQ群：523715143
