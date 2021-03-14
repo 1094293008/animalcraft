@@ -87,6 +87,8 @@
 
 估计该AI（1秒1步）水平接近人类高手（0.7~0.8*人类顶尖）。
 
+野兽争霸斗兽棋账号：AI测试
+
 ## 下载链接
 
 https://github.com/WZ403809264/animalcraft/releases/tag/V1.28
