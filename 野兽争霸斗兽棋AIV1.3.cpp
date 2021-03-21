@@ -2,9 +2,8 @@
 #include<string.h>
 #include<stdlib.h>
 #include<time.h>
-#include<memory.h>
 //常量 
-const char name[24][5]={"　","穴","阱","■","阱","穴","　","　","象","狮","虎","豹","狼","狗","猫","鼠","象","狮","虎","豹","狼","狗","猫","鼠"};//棋子名称
+const char name[24][5]={"　","穴","阱","■","阱","穴","　","　","象","狮","虎","豹","狗","狼","猫","鼠","象","狮","虎","豹","狗","狼","猫","鼠"};//棋子名称
 const int RANK_TOP = 3;//起始行
 const int RANK_BOTTOM = 9;//终点行
 const int FILE_LEFT = 3;//起始列
@@ -106,11 +105,11 @@ static int cucpcStartup[256] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0,10, 0, 8, 0, 0, 0,23, 0,17, 0, 0, 0, 0,
-  0, 0, 0, 0,14, 0, 0, 0, 0, 0,21, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0,12, 0, 0, 0,19, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0,14, 0, 0, 0, 0, 0,20, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,13, 0, 0, 0,19, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0,11, 0, 0, 0,20, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0,13, 0, 0, 0, 0, 0,22, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,11, 0, 0, 0,21, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0,12, 0, 0, 0, 0, 0,22, 0, 0, 0, 0, 0,
   0, 0, 0, 9, 0,15, 0, 0, 0,16, 0,18, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -618,7 +617,7 @@ struct PositionStruct {
   // 生成所有走法，如果"bCapture"为"1"则只生成吃子走法
   int GenerateMoves(int *mvs, bool bCapture = 0);
   bool LegalMove(int mv);               // 判断走法是否合理
-  int IsMate(void);
+  bool IsMate(void);
   bool RepStatus(void) const;        // 检测重复局面
   bool NullOkay(void) const {                 // 判断是否允许空步裁剪
     return (sdPlayer == 0 ? vlWhite : vlBlack) > NULL_MARGIN;
@@ -777,11 +776,11 @@ bool PositionStruct::LegalMove(int mv){
 }
 
 // 判断是否被杀
-int PositionStruct::IsMate(void) {
-	if(ucpcSquares[107]) return 0;
-	if(ucpcSquares[99]) return 1;
-	return 2;
+bool PositionStruct::IsMate(void) {
+	if(((ucpcSquares[99]>=8&&ucpcSquares[99]<=23)&&!sdPlayer)||((ucpcSquares[107]>=8&&ucpcSquares[107]<=23)&&sdPlayer)) return 1;
+	return 0;
 }
+
 /*
 // 检测重复局面
 bool PositionStruct::RepStatus(void) const {
@@ -1131,6 +1130,72 @@ static int SearchQuiesc(int vlAlpha, int vlBeta) {
 long long node=0;
 // "SearchFull"的参数
 const bool NO_NULL = 1;
+// 零窗口完全搜索例程
+static int SearchCut(int vlBeta, int nDepth, bool bNoNull = false) {
+  int nNewDepth, vlBest=-MATE_VALUE, vl;
+  int mvHash, mv, mvEvade;
+  SortStruct MoveSort;
+  // 完全搜索例程包括以下几个步骤：
+
+  if(pos.IsMate()) return -MATE_VALUE;
+  // 1. 在叶子结点处调用静态搜索；
+  if (nDepth <= 0) {
+    return SearchQuiesc(vlBeta - 1, vlBeta);
+  }
+
+  // 3. 置换裁剪；
+  vl = ProbeHash(vlBeta - 1, vlBeta, nDepth, mvHash);
+  if (vl > -MATE_VALUE) {
+    return vl;
+  }
+
+  // 6. 尝试空着裁剪；
+  if (!bNoNull && pos.NullOkay()) {
+    pos.NullMove();
+    vl = -SearchCut(1 - vlBeta, nDepth - NULL_DEPTH - 1, NO_NULL);
+    pos.UndoNullMove();
+
+    if (vl >= vlBeta) {
+    	return vl;
+    }
+  }
+MoveSort.Init(mvHash);
+
+  // 8. 按照"MoveSortStruct::NextFull()"例程的着法顺序逐一搜索；
+  while ((mv = MoveSort.Next()) != 0) {
+    if (pos.MakeMove(mv)) {
+
+    	if(pos.RepStatus())
+    	{
+    		pos.UndoMakeMove();
+			continue;
+		}
+      // 9. 尝试选择性延伸；
+      nNewDepth = nDepth - 1;
+
+      // 10. 零窗口搜索；
+      vl = -SearchCut(1 - vlBeta, nNewDepth);
+      pos.UndoMakeMove();
+
+      // 11. 截断判定；
+      if (vl > vlBest) {
+        vlBest = vl;
+        if (vl >= vlBeta) {
+          RecordHash(HASH_BETA, vlBest, nDepth, mv);
+          SetBestMove(mv, nDepth);
+          return vlBest;
+        }
+      }
+    }
+  }
+
+  // 12. 不截断措施。
+  if (vlBest == -MATE_VALUE) {
+    return pos.nDistance - MATE_VALUE;
+  } else {
+    return vlBest;
+  }
+}
 // 超出边界(Fail-Soft)的Alpha-Beta搜索过程
 static int SearchFull(int vlAlpha, int vlBeta, int nDepth, bool bNoNull = 0) {
 	node++;
@@ -1139,8 +1204,7 @@ static int SearchFull(int vlAlpha, int vlBeta, int nDepth, bool bNoNull = 0) {
   SortStruct Sort;
   // 一个Alpha-Beta完全搜索分为以下几个阶段
   // 1. 到达水平线，则调用静态搜索(注意：由于空步裁剪，深度可能小于零)
-  if(pos.IsMate()==pos.sdPlayer) return MATE_VALUE;
-  else if(pos.IsMate()==!pos.sdPlayer) return -MATE_VALUE;
+  if(pos.IsMate()) return -MATE_VALUE;
   if (nDepth <= 0) {
    return SearchQuiesc(vlAlpha, vlBeta);
   }
@@ -1187,7 +1251,7 @@ static int SearchFull(int vlAlpha, int vlBeta, int nDepth, bool bNoNull = 0) {
       if (vlBest == -MATE_VALUE) {
         vl = -SearchFull(-vlBeta, -vlAlpha, nNewDepth);
       } else {
-        vl = -SearchFull(-vlAlpha - 1, -vlAlpha, nNewDepth);
+        vl = -SearchCut(-vlAlpha, nNewDepth);
         if (vl > vlAlpha && vl < vlBeta) {
           vl = -SearchFull(-vlBeta, -vlAlpha, nNewDepth);
         }
@@ -1263,12 +1327,10 @@ int nGenMoves,mvs[MAX_GEN_MOVES];
 // 根节点的Alpha-Beta搜索过程
 static int SearchRoot(int nDepth) {
   int vl, vlBest, mv, nNewDepth,i;
+  int alpha=-MATE_VALUE,beta=MATE_VALUE;
   i=0;
   SortStruct Sort;
 
-  if(pos.IsMate()==pos.sdPlayer) return MATE_VALUE;
-  else if(pos.IsMate()==!pos.sdPlayer) return -MATE_VALUE;
-  
   vlBest = -MATE_VALUE;
   Sort.Init(Search.mvResult);
   while ((mv = Sort.Next()) != 0) {
@@ -1280,10 +1342,11 @@ static int SearchRoot(int nDepth) {
 		}
 		i++;
       nNewDepth =nDepth-1;
+		
       if (vlBest == -MATE_VALUE) {
         vl = -SearchFull(-MATE_VALUE, MATE_VALUE, nNewDepth, NO_NULL);
       } else {
-        vl = -SearchFull(-vlBest - 1, -vlBest, nNewDepth);
+        vl = -SearchCut(-vlBest, nNewDepth);
         if (vl > vlBest) {
           vl = -SearchFull(-MATE_VALUE, -vlBest, nNewDepth, NO_NULL);
         }
@@ -1297,8 +1360,8 @@ static int SearchRoot(int nDepth) {
         }
       }
     }
-  	t = clock(); 
-  	if(t-t3>t2) break;
+    
+
     if(fenxi)
 	{
 		char aa[15];
@@ -1315,7 +1378,22 @@ static int SearchRoot(int nDepth) {
 			case 48: strcat(aa,"↓");
 		}
 		printfenxi(nDepth,t-t3,i,nGenMoves,vlBest,aa);
-	}
+	}/*
+	    if (vlBest <= alpha)
+		{
+			beta = (alpha + beta) / 2;
+			alpha = -MATE_VALUE;
+		}
+		else if (vlBest >= beta)
+		{
+			alpha = (alpha + beta) / 2;
+			beta = MATE_VALUE;
+		}
+		else
+			break;
+				*/	
+  	t = clock(); 
+  	if(t-t3>t2) break;
   }
   RecordHash(HASH_PV, vlBest, nDepth, Search.mvResult);
   SetBestMove(Search.mvResult, nDepth);
@@ -1371,7 +1449,7 @@ static int SearchMain(void) {
   return Search.mvResult;
 }
 // 电脑回应一步棋
-static void ResponseMove(void) {
+static int ResponseMove(void) {
 	srand((int) time(NULL));
 	InitZobrist();
   // 电脑走一步棋
@@ -1379,24 +1457,27 @@ static void ResponseMove(void) {
   Xqwl.mvLast=Search.mvResult;
   pos.MakeMove(Xqwl.mvLast);
   
-  if (pos.IsMate()==pos.sdPlayer) {
+  if (pos.IsMate()) {
 				DrawBoard();
     // 如果分出胜负，那么播放胜负的声音，并且弹出不带声音的提示框
           printf("请再接再厉！\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
 	Xqwl.bGameOver = 1;
+	return 2;
   }else {
   	
-        	if(pos.RepStatus()||pos.IsMate()==!pos.sdPlayer)
+        	if(pos.RepStatus())
         	{
           printf("祝贺你取得胜利！\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
 				DrawBoard();
           Xqwl.bGameOver = 1;
+          return 2;
 			}
+  return 0;
   }
 }
 bool can=1;
 // 点击格子事件处理
-static void ClickSquare(int sq) {
+static int ClickSquare(int sq) {
   int pc, mv;
   //sq = Xqwl.bFlipped ? SQUARE_FLIP(sq) : sq;
   pc = pos.ucpcSquares[sq];
@@ -1405,6 +1486,7 @@ static void ClickSquare(int sq) {
   {
     // 如果点击自己的子，那么直接选中该子
     Xqwl.sqSelected = sq;
+    return 5;
   }
   else if (Xqwl.sqSelected != 0 && !Xqwl.bGameOver)
   {
@@ -1412,38 +1494,42 @@ static void ClickSquare(int sq) {
     if (pos.LegalMove(mv)) {
       if (pos.MakeMove(mv)) {
       	can=1;
-      	pos.UndoMakeMove();
         Xqwl.mvLast = mv;
         Xqwl.sqSelected = 0;
-  		pos.MakeMove(Xqwl.mvLast);
-        if (pos.IsMate()==!pos.sdPlayer) {
+        if (pos.IsMate()) {
 				DrawBoard();
           printf("祝贺你取得胜利！\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
           Xqwl.bGameOver = 1;
+          return 1;
         } else {
-        	if(pos.RepStatus()||pos.IsMate()==pos.sdPlayer)
+        	if(pos.RepStatus())
         	{
           printf("请再接再厉！\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
 				DrawBoard();
           Xqwl.bGameOver = 1;
+          return 2;
 			}
+          return 0;
           //ResponseMove();
         }
       }
-      return;
+      return 5;
     }
+    return 5;
     // 如果根本就不符合走法(例如马不走日字)，那么程序不予理会
   }
 }
-static void WndProc(void)
+static int WndProc(void)
 {
-	if(Xqwl.bGameOver) return;
 	int x,y;
-	scanf("%d%d",&x,&y);
+	scanf("%d %d",&x,&y);
   	if (x+2 >= FILE_LEFT && x+2 <= FILE_RIGHT && y+2 >= RANK_TOP && y+2 <= RANK_BOTTOM)
 	{
-  		ClickSquare(COORD_XY(x+2, y+2));
+  		int a=ClickSquare(COORD_XY(x+2, y+2));
+  		if(a!=5) return a;
+  		else return 0;
   	}
+  	return 0;
 }
 int main()
 {
@@ -1452,8 +1538,8 @@ int main()
 	while(a!='E'&&a!='e')
 	{
 		system("cls");
-		system("title 野兽争霸斗兽棋AI(V1.28) QQ:403809264");
-		printf("野兽争霸斗兽棋AI V1.28\n");
+		system("title 野兽争霸斗兽棋AI(V1.3) QQ:403809264");
+		printf("野兽争霸斗兽棋AI V1.3\n");
 		if(fenxi) printf("请选择功能：\nA  我当红棋\nB  我当黑棋\nC  双人对战\nD  电脑对战\nE  退出\nF  设置电脑时间(%d毫秒)\nG  设置计算深度(%d层)\nH  隐藏分析\n",t2,depth);
 		else printf("请选择功能：\nA  我当红棋\nB  我当黑棋\nC  双人对战\nD  电脑对战\nE  退出\nF  设置电脑时间(%d毫秒)\nG  设置计算深度(%d层)\nH  显示分析\n",t2,depth);
 		if(Xqwl.bFlipped) printf("I  翻转棋盘(目前红方在左)\n");
@@ -1489,26 +1575,31 @@ int main()
 			{
 				turn=!turn;
 				DrawBoard();
-				if(Xqwl.bGameOver)
-				{
-					break;
-				}
 				if(player[turn])
 				{
+					if(Xqwl.bGameOver)
+					{
+						break;
+					}
 					ResponseMove();
 				}
 				else
 				{
+					if(Xqwl.bGameOver)
+					{
+						break;
+					}
 					can=0;
 					while(!can)
 					{
-						if(Xqwl.bGameOver)
-						{
-							break;
-						}
 						WndProc();
 					}
 				}
+				if(Xqwl.bGameOver)
+				{
+					break;
+				}
+				int mv=Xqwl.mvLast;
 			}
 			system("pause>nul");
 		}
