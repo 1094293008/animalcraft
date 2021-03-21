@@ -101,6 +101,12 @@
 
 ## 下载链接
 
+V1.3
+
+https://github.com/WZ403809264/animalcraft/releases/tag/V1.3
+
+V1.28
+
 https://github.com/WZ403809264/animalcraft/releases/tag/V1.28
 
 ## 线上交流
