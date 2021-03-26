@@ -30,7 +30,7 @@ const int HASH_SIZE = 1 << 25; // 置换表大小
 const int HASH_ALPHA = 1;      // ALPHA节点的置换表项
 const int HASH_BETA = 2;       // BETA节点的置换表项
 const int HASH_PV = 3;         // PV节点的置换表项
-const int RANDOM_MASK = 2;     // 随机性分值
+const int RANDOM_MASK = 3;     // 随机性分值
 
 int t2=1000,depth=99999999,t,t3;//时间控制和深度控制
 bool fenxi=0,player[2],turn,ranghu=0;
@@ -574,7 +574,7 @@ struct PositionStruct {
       zobr.Xor(Zobrist.Table[pc - 8][sq]);
     } else {
       vlBlack += cucvlPiecePos[pc - 16][BLACK(sq)];
-      zobr.Xor(Zobrist.Table[pc - 9][sq]);
+      zobr.Xor(Zobrist.Table[pc - 8][sq]);
     }
   }
   void DelPiece(int sq, int pc) { // 从棋盘上拿走一枚棋子
@@ -585,7 +585,7 @@ struct PositionStruct {
       zobr.Xor(Zobrist.Table[pc - 8][sq]);
     } else {
       vlBlack -= cucvlPiecePos[pc - 16][BLACK(sq)];
-      zobr.Xor(Zobrist.Table[pc - 9][sq]);
+      zobr.Xor(Zobrist.Table[pc - 8][sq]);
     }
   }
   int Evaluate(void) const {      // 局面评价函数
@@ -618,7 +618,9 @@ struct PositionStruct {
   int GenerateMoves(int *mvs, bool bCapture = 0);
   bool LegalMove(int mv);               // 判断走法是否合理
   bool IsMate(void);
-  bool RepStatus(void) const;        // 检测重复局面
+  bool RepWuLai(void) const;
+  bool RepWuSong(void) const;
+  bool RepStatus(void) const;
   bool NullOkay(void) const {                 // 判断是否允许空步裁剪
     return (sdPlayer == 0 ? vlWhite : vlBlack) > NULL_MARGIN;
   }
@@ -796,66 +798,57 @@ bool PositionStruct::RepStatus(void) const {
 	}
 	return 0;
 }*/
-bool PositionStruct::RepStatus(void) const {
+bool PositionStruct::RepWuLai(void) const {
 	int count[24][256];
-	bool inxianjing=0;
 	memset(count,0,sizeof(count));
 	for(int i=nMoveNum-3;i>=nMoveNum-16&&i>=0;i-=2)
 	{
 		if(INXIANJING(DST(mvsList[i].wmv),16)||INXIANJING(DST(mvsList[i].wmv),8))
 		{
-			inxianjing=1;
-			break;
+			return 0;
 		}
-	}
-	if(inxianjing==0)
-	{
-		for(int i=nMoveNum-3;i>=nMoveNum-16&&i>=0;i-=2)
+		count[mvsList[i].wpc][DST(mvsList[i].wmv)]++;
+		if(count[mvsList[i].wpc][DST(mvsList[i].wmv)]>=3&&DST(mvsList[i].wmv)==DST(mvsList[nMoveNum].wmv))
 		{
-			count[mvsList[i].wpc][DST(mvsList[i].wmv)]++;
-			if(count[mvsList[i].wpc][DST(mvsList[i].wmv)]>=3&&DST(mvsList[i].wmv)==DST(mvsList[nMoveNum].wmv))
-			{
-				return 1;
-			}
+			return 1;
 		}
 	}
-	for(int i=nMoveNum-1;i>=nMoveNum-36&&i>=0;i-=2)
+	return 0;
+}
+bool PositionStruct::RepWuSong(void) const {
+	int animal=mvsList[nMoveNum-1].wpc,dst=DST(mvsList[nMoveNum-1].wmv),count[6],qigenum=0;
+	memset(count,0,sizeof(count));
+	for(int i=nMoveNum-3;i>=nMoveNum-36&&i>=0;i-=2)
 	{
 		if(INXIANJING(DST(mvsList[i].wmv),16)||INXIANJING(DST(mvsList[i].wmv),8))
 		{
 			return 0;
 		}
-	}
-	int animal=mvsList[nMoveNum-1].wpc,count2[50],num=0;
-	memset(count2,0,sizeof(count));
-	for(int i=nMoveNum-3;i>=nMoveNum-36&&i>=0;i-=2)
-	{
 		if(mvsList[i].wpc!=animal) return 0;
-	}
-	for(int i=nMoveNum-3;i>=nMoveNum-36&&i>=0;i-=2)
-	{
-		if(num>5) return 0;
 		bool rep=0;
-		for(int j=0;j<num;j++)
+		for(int j=0;j<qigenum;j++)
 		{
-			if(DST(mvsList[i].wmv)==count2[j])
+			if(DST(mvsList[i].wmv)==count[j])
 			{
 				rep=1;
 				break;
 			}
 		}
-		if(rep==0) count2[num++]=DST(mvsList[i].wmv);
+		if(rep==0) count[qigenum++]=DST(mvsList[i].wmv);
+		if(qigenum>5) return 0;
 	}
-	if(num<=5)
+	for(int j=0;j<qigenum;j++)
 	{
-		for(int j=0;j<num;j++)
+		if(dst==count[j])
 		{
-			if(DST(mvsList[nMoveNum-1].wmv)==count2[j])
-			{
-				return 1;
-			}
+			return 1;
 		}
 	}
+	return 0;
+}
+bool PositionStruct::RepStatus(void) const {
+	if(RepWuLai()) return 1;
+	if(RepWuSong()) return 1;
 	return 0;
 }
 
@@ -1378,20 +1371,7 @@ static int SearchRoot(int nDepth) {
 			case 48: strcat(aa,"↓");
 		}
 		printfenxi(nDepth,t-t3,i,nGenMoves,vlBest,aa);
-	}/*
-	    if (vlBest <= alpha)
-		{
-			beta = (alpha + beta) / 2;
-			alpha = -MATE_VALUE;
-		}
-		else if (vlBest >= beta)
-		{
-			alpha = (alpha + beta) / 2;
-			beta = MATE_VALUE;
-		}
-		else
-			break;
-				*/	
+	}
   	t = clock(); 
   	if(t-t3>t2) break;
   }
@@ -1538,8 +1518,8 @@ int main()
 	while(a!='E'&&a!='e')
 	{
 		system("cls");
-		system("title 野兽争霸斗兽棋AI(V1.3) QQ:403809264");
-		printf("野兽争霸斗兽棋AI V1.3\n");
+		system("title 野兽争霸斗兽棋AI(V1.31) QQ:403809264");
+		printf("野兽争霸斗兽棋AI V1.31\n");
 		if(fenxi) printf("请选择功能：\nA  我当红棋\nB  我当黑棋\nC  双人对战\nD  电脑对战\nE  退出\nF  设置电脑时间(%d毫秒)\nG  设置计算深度(%d层)\nH  隐藏分析\n",t2,depth);
 		else printf("请选择功能：\nA  我当红棋\nB  我当黑棋\nC  双人对战\nD  电脑对战\nE  退出\nF  设置电脑时间(%d毫秒)\nG  设置计算深度(%d层)\nH  显示分析\n",t2,depth);
 		if(Xqwl.bFlipped) printf("I  翻转棋盘(目前红方在左)\n");
